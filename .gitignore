@@ -1,0 +1,28 @@
+# Environments
+.env
+.env.*
+!.env.example
+
+# Gemini & Agent Folders
+.gemini/
+.agents/
+.kiro/
+!.kiro/specs/
+
+# Build & Dependencies
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+# Demo Junk
+demo_repos/
+populate_demo.bat
+push_project.bat
+
+# OS Junk
+.DS_Store
+Thumbs.db

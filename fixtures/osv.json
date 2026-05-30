@@ -1,0 +1,13 @@
+[
+  {
+    "cve_id": "CVE-2021-23337",
+    "vulnerability_details": "Prototype pollution in lodash 4.17.15 and earlier via the zipObjectDeep function. An attacker can supply a specially crafted object to pollute the prototype of Object.",
+    "risk_level": "CRITICAL",
+    "package_name": "lodash",
+    "version": "4.17.15",
+    "ecosystem": "npm",
+    "summary": "Prototype pollution in lodash via zipObjectDeep",
+    "severity": "CRITICAL",
+    "filename": "package.json"
+  }
+]

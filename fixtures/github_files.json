@@ -1,0 +1,11 @@
+[
+  {
+    "filename": "package.json",
+    "status": "modified",
+    "patch": "@@ -10,7 +10,7 @@ \"dependencies\": {\n-    \"lodash\": \"^4.17.14\",\n+    \"lodash\": \"^4.17.15\",\n     \"express\": \"^4.18.2\"\n   }",
+    "pull_number": 1042,
+    "owner": "acme",
+    "repo": "payment-gateway-service",
+    "content": "{\n  \"name\": \"payment-gateway-service\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"lodash\": \"^4.17.15\",\n    \"express\": \"^4.18.2\"\n  },\n  \"devDependencies\": {\n    \"jest\": \"^29.0.0\"\n  }\n}"
+  }
+]

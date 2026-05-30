@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "coral": {
+      "source": "withcoral/skills",
+      "sourceType": "github",
+      "skillPath": "coral/SKILL.md",
+      "computedHash": "415c43411b536c9232d50e9bab8803fb59c797ca4e03884e360751a4d2ab5c42"
+    }
+  }
+}

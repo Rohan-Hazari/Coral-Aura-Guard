@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0b;
+  --color-card: #121214;
+  --color-primary: #3b82f6;
+  --color-secondary: #1f2937;
+  --color-accent: #10b981;
+  --color-muted: #9ca3af;
+  
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-white antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.terminal-card {
+  @apply bg-card border border-white/10 rounded-lg overflow-hidden;
+}
+
+.report-content h1 { @apply text-2xl font-bold mb-4 text-primary; }
+.report-content h2 { @apply text-xl font-semibold mb-3 mt-6 text-primary/90; }
+.report-content h3 { @apply text-lg font-medium mb-2 mt-4 text-accent; }
+.report-content p { @apply mb-4 text-muted leading-relaxed; }
+.report-content ul { @apply list-disc ml-6 mb-4 space-y-1 text-muted; }
+.report-content code { @apply bg-secondary/50 px-1.5 py-0.5 rounded font-mono text-sm text-pink-400; }
+.report-content pre { @apply bg-secondary p-4 rounded-lg overflow-x-auto mb-4 border border-white/5; }
+.report-content pre code { @apply bg-transparent p-0 text-white; }
+.report-content blockquote { @apply border-l-4 border-primary/50 pl-4 italic my-4 text-muted/80; }
+
+@keyframes scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-33.33%); }
+}
+
+.animate-scroll {
+  animation: scroll 20s linear infinite;
+}
+
+.glass-panel {
+  @apply backdrop-blur-xl bg-white/[0.01] border border-white/10;
+}
