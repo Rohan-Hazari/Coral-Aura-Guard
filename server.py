@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
 import logging
+import time
 from typing import List, Optional, Set
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -146,6 +147,7 @@ async def incident_triage(owner: str, service: str, payload: ScanRequest, log_gr
     log_sql = f"SELECT * FROM cloudwatch_logs.log_events WHERE log_group_name = '{log_group}' AND filter_pattern = '{{ $.level = \"ERROR\" }}' LIMIT 5"
     
     try:
+        # EXECUTE Step 1: Logs
         await manager.broadcast({"type": "query_start", "sql": log_sql, "agentic": False})
         logs = await agent.run_sql(log_sql)
         
@@ -192,14 +194,6 @@ async def incident_triage(owner: str, service: str, payload: ScanRequest, log_gr
             "culprit_file_path": target_file,
             "culprit_file_content": file_content
         }
-        
-        from commands.incident_triage import _INCIDENT_PROMPT
-        report = await agent.summarize_data([federated_data], _INCIDENT_PROMPT, {"owner": owner, "service": service})
-        return {"report": report, "status": "investigating"}
-    except Exception as e:
-        msg = str(e)
-        logger.error("Incident triage failed: %s\n%s", msg, traceback.format_exc())
-        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
         
         from commands.incident_triage import _INCIDENT_PROMPT
         report = await agent.summarize_data([federated_data], _INCIDENT_PROMPT, {"owner": owner, "service": service})

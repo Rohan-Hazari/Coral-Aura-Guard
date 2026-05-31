@@ -184,82 +184,82 @@ class AuraGuardAgent:
             raise RuntimeError(msg) from e
 
     async def fast_repo_scan(self, owner: str, repo: str) -> dict:
-        """Fetch package manifest (JS/Py/Rust) AND active PRs in one comprehensive scan."""
+        """Fetch package manifest (JS/Py/Rust) AND perform deep PR security audit."""
         findings = []
-        # 1. Try to find manifests for different ecosystems
-        manifest_files = [
-            ("package.json", "npm"),
-            ("requirements.txt", "PyPI"),
-            ("Cargo.toml", "Cargo")
-        ]
-        
+        # 1. Fetch current main manifests
+        manifest_files = [("package.json", "npm"), ("requirements.txt", "PyPI"), ("Cargo.toml", "Cargo")]
         for filename, ecosystem in manifest_files:
-            manifest_sql = f"SELECT content_text FROM github.contents WHERE owner = '{owner}' AND repo = '{repo}' AND path = '{filename}'"
+            sql = f"SELECT content_text FROM github.contents WHERE owner = '{owner}' AND repo = '{repo}' AND path = '{filename}'"
             try:
-                rows = await self.run_sql(manifest_sql)
-                if rows and "content_text" in rows[0]:
-                    content = rows[0]["content_text"]
-                    deps = {}
-                    
-                    if filename == "package.json":
-                        try:
-                            manifest = json.loads(content)
-                            deps = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
-                        except json.JSONDecodeError:
-                            logger.warning("Invalid package.json in %s/%s, skipping.", owner, repo)
-                            continue
-                    elif filename == "requirements.txt":
-                        for line in content.splitlines():
-                            if "==" in line:
-                                pkg, ver = line.split("==")[:2]
-                                deps[pkg.strip()] = ver.strip()
-                    elif filename == "Cargo.toml":
-                        # Simple regex-less parsing for basic Cargo.toml
-                        in_deps = False
-                        for line in content.splitlines():
-                            if line.strip() == "[dependencies]": in_deps = True
-                            elif line.startswith("[") : in_deps = False
-                            elif in_deps and "=" in line:
-                                pkg, ver = line.split("=")[:2]
-                                deps[pkg.strip()] = ver.strip().strip('"').strip("'")
+                rows = await self.run_sql(sql)
+                if rows:
+                    findings.extend(await self._check_manifest_vulnerabilities(owner, repo, rows[0]["content_text"], filename, ecosystem))
+            except: continue
 
-                    # Check top 5 vulnerabilities per ecosystem (to stay fast)
-                    for pkg, ver in list(deps.items())[:5]:
-                        # Clean version (strip ^, ~, etc. for npm/cargo)
-                        clean_ver = "".join(c for c in ver if c.isdigit() or c == '.')
-                        if not clean_ver: continue
-                        
-                        osv_sql = f"SELECT * FROM osv.query_by_version WHERE package_name = '{pkg}' AND version = '{clean_ver}' AND ecosystem = '{ecosystem}'"
-                        try:
-                            vulnerabilities = await self.run_sql(osv_sql)
-                            for v in vulnerabilities:
-                                findings.append({
-                                    "repo": repo,
-                                    "ecosystem": ecosystem,
-                                    "package_name": pkg,
-                                    "current_version": ver,
-                                    "cve_id": v.get("id"),
-                                    "severity": v.get("severity"),
-                                    "summary": v.get("summary")
-                                })
-                        except:
-                            continue
-            except:
-                continue
-
-        # 2. Fetch Active Pull Requests
-        prs = []
-        prs_sql = f"SELECT number, title, html_url, state, user__login FROM github.pulls WHERE owner = '{owner}' AND repo = '{repo}' AND state = 'open' LIMIT 5"
+        # 2. Deep PR Audit (Delta Security Scan)
+        pr_alerts = []
+        prs_sql = f"SELECT number, title, head__sha, base__sha FROM github.pulls WHERE owner = '{owner}' AND repo = '{repo}' AND state = 'open' LIMIT 5"
         try:
             prs = await self.run_sql(prs_sql)
-        except Exception as e:
-            logger.error("PR scan failed for %s/%s: %s", owner, repo, e)
+            for pr in prs:
+                # Compare manifest in head vs base
+                for filename, ecosystem in manifest_files:
+                    try:
+                        # Get Head Manifest
+                        head_sql = f"SELECT content_text FROM github.contents WHERE owner = '{owner}' AND repo = '{repo}' AND path = '{filename}' AND ref = '{pr['head__sha']}'"
+                        base_sql = f"SELECT content_text FROM github.contents WHERE owner = '{owner}' AND repo = '{repo}' AND path = '{filename}' AND ref = '{pr['base__sha']}'"
+                        
+                        head_rows = await self.run_sql(head_sql)
+                        base_rows = await self.run_sql(base_sql)
+                        
+                        if head_rows and base_rows:
+                            head_vulns = await self._check_manifest_vulnerabilities(owner, repo, head_rows[0]["content_text"], filename, ecosystem)
+                            base_vulns = await self._check_manifest_vulnerabilities(owner, repo, base_rows[0]["content_text"], filename, ecosystem)
+                            
+                            # Identify NEWLY introduced vulnerabilities
+                            base_cves = {v['cve_id'] for v in base_vulns}
+                            new_vulns = [v for v in head_vulns if v['cve_id'] not in base_cves]
+                            
+                            if new_vulns:
+                                pr_alerts.append({
+                                    "pr_number": pr["number"],
+                                    "pr_title": pr["title"],
+                                    "newly_introduced_vulnerabilities": new_vulns
+                                })
+                    except: continue
+        except: pass
 
         return {
             "repository": f"{owner}/{repo}",
-            "active_pull_requests": prs,
-            "vulnerabilities": findings
+            "current_vulnerabilities": findings,
+            "high_risk_pull_requests": pr_alerts
         }
+
+    async def _check_manifest_vulnerabilities(self, owner: str, repo: str, content: str, filename: str, ecosystem: str) -> list[dict]:
+        """Helper to parse manifest and query OSV."""
+        deps = {}
+        if filename == "package.json":
+            try:
+                manifest = json.loads(content)
+                deps = {**manifest.get("dependencies", {}), **manifest.get("devDependencies", {})}
+            except: return []
+        elif filename == "requirements.txt":
+            for line in content.splitlines():
+                if "==" in line:
+                    parts = line.split("==")
+                    deps[parts[0].strip()] = parts[1].strip()
+        
+        findings = []
+        for pkg, ver in list(deps.items())[:10]:
+            clean_ver = "".join(c for c in ver if c.isdigit() or c == '.')
+            if not clean_ver: continue
+            osv_sql = f"SELECT * FROM osv.query_by_version WHERE package_name = '{pkg}' AND version = '{clean_ver}' AND ecosystem = '{ecosystem}'"
+            try:
+                vulns = await self.run_sql(osv_sql)
+                for v in vulns:
+                    findings.append({"package_name": pkg, "current_version": ver, "cve_id": v.get("id"), "severity": v.get("severity"), "summary": v.get("summary")})
+            except: continue
+        return findings
 
     async def fast_org_scan(self, owner: str) -> list[dict]:
         """Fetch all repositories and perform a comprehensive Repo+PR scan on the first 3."""

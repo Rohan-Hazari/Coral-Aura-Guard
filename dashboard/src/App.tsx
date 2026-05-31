@@ -49,14 +49,16 @@ const WS_BASE = 'ws://localhost:8000/ws/stream';
 export default function App() {
   const [route, setRoute] = useState(() => window.location.pathname === '/demo' ? '/demo' : '/');
   const [activeTab, setActiveTab] = useState<Tab>('org-scan');
+  
+  // DECOUPLED STATE
   const [loadings, setLoadings] = useState<Record<string, boolean>>({});
   const [reports, setReports] = useState<Record<string, Report | null>>({});
   const [errors, setErrors] = useState<Record<string, string | null>>({});
+  
   const [remediating, setRemediating] = useState(false);
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
-  const [scanRecentPrs, setScanRecentPrs] = useState(false);
   const [discoveryItems] = useState<DiscoveryItem[] | null>([
     {
         id: "error-1",
@@ -71,8 +73,8 @@ export default function App() {
         type: "audit",
         title: "🟡 Security Audit Required: recent PRs",
         description: "Recent PRs in 'aura-guard-node-service' modify package.json. Automated delta-scan recommended.",
-        tab: "supply-chain",
-        params: {owner: "Rohan-Hazari", repo: "aura-guard-node-service", pr: "recent"}
+        tab: "org-scan",
+        params: {owner: "Rohan-Hazari", repo: "aura-guard-node-service"}
     }
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -101,44 +103,31 @@ export default function App() {
     setRoute('/demo');
   };
 
-  // Resize Logic
-  const startResizing = useCallback(() => setIsResizing(true), []);
-  const stopResizing = useCallback(() => setIsResizing(false), []);
-  const resize = useCallback((e: MouseEvent) => {
-    if (isResizing) setSidebarWidth(e.clientX);
-  }, [isResizing]);
-
   useEffect(() => {
-    window.addEventListener("mousemove", resize);
-    window.addEventListener("mouseup", stopResizing);
-    return () => {
-      window.removeEventListener("mousemove", resize);
-      window.removeEventListener("mouseup", stopResizing);
-    };
-  }, [resize, stopResizing]);
-
-  // WebSocket Connection
-  useEffect(() => {
+    if (route !== '/demo') return;
+    
     const ws = new WebSocket(WS_BASE);
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      setEvents(prev => [{ ...data, timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 50));
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      const timestamp = new Date().toLocaleTimeString();
+      setEvents(prev => [{ ...data, timestamp }, ...prev].slice(0, 50));
     };
     return () => ws.close();
-  }, []);
+  }, [route]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
   }, [events]);
 
-  const handleRunScan = async (overrideParams?: any, overrideTab?: Tab) => {
-    setLoading(true);
-    setError(null);
-    setReport(null);
-    setRemediating(false);
-
+  const handleRunScan = async (overrideTab?: Tab, overrideParams?: any) => {
     const targetTab = overrideTab || activeTab;
     const targetOwner = overrideParams?.owner || owner;
+
+    setLoadings(prev => ({ ...prev, [targetTab]: true }));
+    setErrors(prev => ({ ...prev, [targetTab]: null }));
+    setReports(prev => ({ ...prev, [targetTab]: null }));
 
     try {
       let endpoint = '';
@@ -146,11 +135,6 @@ export default function App() {
 
       if (targetTab === 'org-scan') {
         endpoint = '/api/org-scan';
-      } else if (targetTab === 'supply-chain') {
-        endpoint = '/api/supply-chain';
-        const targetRepo = overrideParams?.repo || repo;
-        const targetPr = overrideParams?.pr || (scanRecentPrs ? 'recent' : pr);
-        params += `&repo=${targetRepo}&pr=${targetPr}`;
       } else if (targetTab === 'blast-radius') {
         endpoint = '/api/blast-radius';
         params += `&file=${overrideParams?.file || libFile}`;
@@ -171,11 +155,11 @@ export default function App() {
       }
 
       const data = await res.json();
-      setReport(data);
+      setReports(prev => ({ ...prev, [targetTab]: data }));
     } catch (err: any) {
-      setError(err.message);
+      setErrors(prev => ({ ...prev, [targetTab]: err.message }));
     } finally {
-      setLoading(false);
+      setLoadings(prev => ({ ...prev, [targetTab]: false }));
     }
   };
 
@@ -194,13 +178,37 @@ export default function App() {
   const handleRemediate = async () => {
     setRemediating(true);
     await new Promise(r => setTimeout(r, 2000));
-    setReport(prev => prev ? { ...prev, remediation_status: 'SUCCESS' } as any : null);
+    setReports(prev => {
+        const activeReport = prev[activeTab];
+        if (!activeReport) return prev;
+        return {
+            ...prev,
+            [activeTab]: { ...activeReport, remediation_status: 'SUCCESS' }
+        };
+    });
     setRemediating(false);
   };
 
   if (route !== '/demo') {
     return <LandingPage onStart={navigateToDemo} />;
   }
+
+  const startResizing = useCallback(() => setIsResizing(true), []);
+  const stopResizing = useCallback(() => setIsResizing(false), []);
+  const resize = useCallback((e: MouseEvent) => {
+    if (isResizing) setSidebarWidth(e.clientX);
+  }, [isResizing]);
+
+  useEffect(() => {
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", stopResizing);
+    return () => {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResizing);
+    };
+  }, [resize, stopResizing]);
+
+  const handleClearLogs = () => setEvents([]);
 
   return (
     <div className={cn("flex h-screen bg-background text-white font-sans overflow-hidden", isResizing && "cursor-col-resize select-none")}>
@@ -314,8 +322,8 @@ export default function App() {
                         </div>
                       )}
 
-                      <button onClick={() => handleRunScan()} disabled={loading} className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center gap-3 mt-6 shadow-xl shadow-primary/20 group uppercase text-xs tracking-widest">
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />}
+                      <button onClick={() => handleRunScan()} disabled={loadings[activeTab]} className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center gap-3 mt-6 shadow-xl shadow-primary/20 group uppercase text-xs tracking-widest">
+                        {loadings[activeTab] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />}
                         Execute Analysis
                       </button>
                     </>
@@ -362,7 +370,7 @@ export default function App() {
                 </div>
               )}
 
-              {activeTab !== 'configuration' && !report && !loading && !error && (
+              {activeTab !== 'configuration' && !reports[activeTab] && !loadings[activeTab] && !errors[activeTab] && (
                 <div className="space-y-8 animate-in fade-in duration-1000">
                     <div className="flex items-center justify-between">
                         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white/30 flex items-center gap-2">
@@ -402,7 +410,7 @@ export default function App() {
                 </div>
               )}
 
-              {loading && (
+              {loadings[activeTab] && (
                 <div className="h-[600px] flex flex-col items-center justify-center text-center p-12 terminal-card bg-white/[0.01]">
                   <div className="relative mb-8">
                     <Loader2 className="w-20 h-20 text-primary animate-spin" />
@@ -421,12 +429,12 @@ export default function App() {
                 </div>
               )}
 
-              {error && (
+              {errors[activeTab] && (
                 <div className="p-10 border border-red-500/20 bg-red-500/5 rounded-3xl flex gap-8 items-start shadow-2xl shadow-red-500/5">
                   <AlertTriangle className="w-10 h-10 text-red-500 flex-shrink-0" />
                   <div>
                     <h3 className="text-red-500 font-black text-xl tracking-tighter uppercase mb-2">Analysis Interrupted</h3>
-                    <p className="text-red-400/60 text-sm font-mono leading-relaxed">{error}</p>
+                    <p className="text-red-400/60 text-sm font-mono leading-relaxed">{errors[activeTab]}</p>
                     <button onClick={() => handleRunScan()} className="mt-6 text-[10px] font-black text-red-500 hover:underline uppercase tracking-widest flex items-center gap-2">
                         <RotateCcw className="w-3 h-3" /> Retry Investigation
                     </button>
@@ -434,51 +442,28 @@ export default function App() {
                 </div>
               )}
 
-              {report && (
+              {reports[activeTab] && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                  <div className={cn("p-6 rounded-3xl flex items-center justify-between border shadow-2xl bg-white/[0.02]", report.status === 'clean' ? "border-accent/20 shadow-accent/5" : "border-red-500/20 shadow-red-500/5")}>
+                  <div className={cn("p-6 rounded-3xl flex items-center justify-between border shadow-2xl bg-white/[0.02]", reports[activeTab]?.status === 'clean' ? "border-accent/20 shadow-accent/5" : "border-red-500/20 shadow-red-500/5")}>
                     <div className="flex items-center gap-5">
-                      <div className={cn("p-3 rounded-2xl", report.status === 'clean' ? "bg-accent/10 text-accent" : "bg-red-500/10 text-red-500")}>
-                        {report.status === 'clean' ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                      <div className={cn("p-3 rounded-2xl", reports[activeTab]?.status === 'clean' ? "bg-accent/10 text-accent" : "bg-red-500/10 text-red-500")}>
+                        {reports[activeTab]?.status === 'clean' ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
                       </div>
                       <div>
                         <div className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30 mb-1">Triaged Outcome</div>
-                        <div className={cn("font-bold text-xl leading-tight uppercase tracking-tight", report.status === 'clean' ? "text-accent" : "text-red-500")}>Status: {report.status}</div>
+                        <div className={cn("font-bold text-xl leading-tight uppercase tracking-tight", reports[activeTab]?.status === 'clean' ? "text-accent" : "text-red-500")}>Status: {reports[activeTab]?.status}</div>
                       </div>
                     </div>
-                    {report.remediation && (
-                      <button onClick={handleRemediate} disabled={remediating || (report as any).remediation_status === 'SUCCESS'} className={cn("px-6 py-3 rounded-2xl font-black text-xs flex items-center gap-3 transition-all shadow-xl", (report as any).remediation_status === 'SUCCESS' ? "bg-accent text-white" : "bg-red-500 hover:bg-red-600 text-white shadow-red-500/20 active:scale-95")}>
-                        {remediating ? <Loader2 className="w-4 h-4 animate-spin" /> : (report as any).remediation_status === 'SUCCESS' ? <CheckCircle2 className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
-                        {(report as any).remediation_status === 'SUCCESS' ? 'ROLLBACK SUCCESSFUL' : 'AUTO-ROLLBACK'}
+                    {reports[activeTab]?.remediation && (
+                      <button onClick={handleRemediate} disabled={remediating || (reports[activeTab] as any).remediation_status === 'SUCCESS'} className={cn("px-6 py-3 rounded-2xl font-black text-xs flex items-center gap-3 transition-all shadow-xl", (reports[activeTab] as any).remediation_status === 'SUCCESS' ? "bg-accent text-white" : "bg-red-500 hover:bg-red-600 text-white shadow-red-500/20 active:scale-95")}>
+                        {(reports[activeTab] as any).remediation_status === 'SUCCESS' ? <CheckCircle2 className="w-4 h-4" /> : <Command className="w-4 h-4" />}
+                        {(reports[activeTab] as any).remediation_status === 'SUCCESS' ? 'REMEDIATION_APPLIED' : 'EXECUTE_REMEDIATION'}
                       </button>
                     )}
                   </div>
-                  <div className="terminal-card p-12 report-content prose prose-invert max-w-none shadow-2xl relative overflow-hidden bg-[#121214] border-white/5">
-                    <div className="absolute top-0 right-0 p-6 opacity-5"><Shield className="w-48 h-48" /></div>
-                    {activeTab === 'blast-radius' && report.rows && (
-                      <div className="mb-12">
-                        <h3 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-6">Downstream Dependency Graph</h3>
-                        <DependencyGraph data={report.rows} rootLabel={libFile} />
-                      </div>
-                    )}
-                    <div className="relative z-10">
-                        <ReactMarkdown>{report.report}</ReactMarkdown>
-                    </div>
-                    {report.remediation && (
-                      <div className="mt-16 pt-10 border-t border-white/5 relative z-10">
-                        <h4 className="text-[10px] font-black text-primary mb-6 flex items-center gap-3 uppercase tracking-[0.2em]"><Command className="w-4 h-4" />Proposed Remediation</h4>
-                        <div className="bg-black/50 p-6 rounded-2xl border border-white/5 font-mono text-sm text-green-400 flex items-center justify-between group shadow-inner">
-                          <span>$ {report.remediation}</span>
-                          <button className="text-[9px] bg-white/10 px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all font-sans font-bold hover:bg-white/20">COPY COMMAND</button>
-                        </div>
-                        {(report as any).remediation_status === 'SUCCESS' && (
-                          <div className="mt-6 p-4 bg-accent/10 border border-accent/20 rounded-2xl text-accent text-[11px] font-bold animate-in fade-in slide-in-from-top-2 flex items-center gap-3">
-                            <Activity className="w-4 h-4" />
-                            [SYSTEM] Pipeline instruction executed. Environment stabilization in progress.
-                          </div>
-                        )}
-                      </div>
-                    )}
+
+                  <div className="terminal-card p-10 bg-white/[0.01] prose prose-invert prose-sm max-w-none prose-headings:font-black prose-headings:uppercase prose-headings:tracking-tighter prose-p:text-muted/60 prose-p:leading-relaxed prose-table:border-white/5 prose-th:text-primary prose-th:uppercase prose-th:text-[10px]">
+                    <ReactMarkdown>{reports[activeTab]?.report || ''}</ReactMarkdown>
                   </div>
                 </div>
               )}
@@ -490,13 +475,38 @@ export default function App() {
   );
 }
 
+function HealthStat({ label, status }: any) {
+  return (
+    <div className="bg-white/[0.02] border border-white/5 p-3 rounded-xl flex items-center justify-between">
+      <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", status === 'online' ? "bg-accent shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-red-500")} />
+        <span className="text-[8px] font-bold uppercase">{status}</span>
+      </div>
+    </div>
+  );
+}
+
 function TabButton({ active, onClick, icon, label, desc }: any) {
   return (
-    <button onClick={onClick} className={cn("w-full flex items-center gap-4 p-4 rounded-2xl transition-all text-left group", active ? "bg-primary/10 text-primary border border-primary/20 shadow-inner" : "hover:bg-white/[0.03] text-muted/50")}>
-      <div className={cn("p-3 rounded-xl shrink-0 transition-transform group-hover:scale-110", active ? "bg-primary text-white shadow-lg shadow-primary/20" : "bg-secondary/40")}>{icon}</div>
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full p-4 rounded-2xl transition-all flex items-start gap-4 border text-left group",
+        active 
+          ? "bg-primary/10 border-primary/20 text-white shadow-lg shadow-primary/5" 
+          : "bg-transparent border-transparent text-white/40 hover:bg-white/[0.02]"
+      )}
+    >
+      <div className={cn(
+        "p-2.5 rounded-xl transition-colors shrink-0",
+        active ? "bg-primary text-white" : "bg-white/[0.03] text-white/20 group-hover:text-white/40"
+      )}>
+        {icon}
+      </div>
       <div className="min-w-0">
-        <div className={cn("text-xs font-black truncate uppercase tracking-tight", active ? "text-primary" : "text-white/70")}>{label}</div>
-        <div className="text-[9px] font-medium opacity-30 leading-tight uppercase tracking-widest truncate mt-0.5">{desc}</div>
+        <div className={cn("font-bold text-xs uppercase tracking-tight mb-0.5", active ? "text-white" : "text-white/40")}>{label}</div>
+        <div className="text-[9px] leading-tight opacity-40 line-clamp-1">{desc}</div>
       </div>
     </button>
   );
@@ -504,21 +514,15 @@ function TabButton({ active, onClick, icon, label, desc }: any) {
 
 function InputField({ label, value, onChange, placeholder }: any) {
   return (
-    <div className="space-y-3">
-      <label className="text-[10px] font-black text-white/20 tracking-[0.2em] uppercase ml-1">{label}</label>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full bg-secondary/40 border border-white/5 rounded-2xl px-5 py-4 text-xs focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all font-mono placeholder:text-white/5 shadow-inner" />
-    </div>
-  );
-}
-
-function HealthStat({ label, status }: any) {
-  return (
-    <div className="flex items-center justify-between p-3 bg-white/[0.02] rounded-xl border border-white/5 font-mono text-[9px] shadow-sm">
-      <span className="text-white/30 uppercase font-bold">{label}</span>
-      <span className={cn("flex items-center gap-2", status === 'online' ? "text-accent" : "text-red-400")}>
-        <div className="w-1.5 h-1.5 bg-current rounded-full animate-pulse shadow-[0_0_8px_currentColor]" />
-        {status.toUpperCase()}
-      </span>
+    <div className="space-y-2">
+      <label className="text-[8px] font-black text-white/20 uppercase tracking-[0.2em] ml-1">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-3 text-xs font-medium focus:outline-none focus:border-primary/50 transition-colors placeholder:text-white/10"
+      />
     </div>
   );
 }
