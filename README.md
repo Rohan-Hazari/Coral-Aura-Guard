@@ -30,6 +30,7 @@ We built a **State-of-the-Art SRE Command Center** consisting of:
   - _Example_: Scanning a new PR for `express` and catching `CVE-2024-43796` (Prototype Pollution) before it ever reaches the `main` branch.
 - **Cross-Repo Blast Radius Evaluator**: A technical impact analysis tool that uses Coral table functions to instantly map which downstream services and repositories import a specific package or file, quantifying the risk of a "small change" across the entire organization.
   - _Example_: Running a single SQL join to see that changing core logic in `next` within the `vercel` organization will break active PRs in `vercel/flags`, `vercel/storage`, and `vercel/sdk`
+<img width="1899" height="889" alt="image" src="https://github.com/user-attachments/assets/c54f3db7-6ee9-4cd4-bdfb-3f16c14cdb20" />
 
 ## How you used Coral
 
