@@ -1,6 +1,6 @@
 # Aura Guard: The Autonomous SRE Control Room
 
-Aura Guard is an autonomous security triage and incident response platform. It leverages **Coral's Federated SQL Engine** and **Model Context Protocol (MCP)** to empower an AI assistant that investigates production incidents, audits supply chains, and evaluates deployment risks with surgical precision.
+Aura Guard is an autonomous security triage and incident response platform. It leverages **Coral's SQL Engine** and **Model Context Protocol (MCP)** to empower an AI assistant that investigates production incidents, audits supply chains, and evaluates deployment risks with surgical precision.
 
 ## What problem you solve
 
@@ -24,14 +24,16 @@ With Aura Guard, this entire multi-system investigation—whether it's an active
 
 We built a **State-of-the-Art SRE Command Center** consisting of:
 
-- **Autonomous Agent**: A Pydantic AI-powered assistant (Gemini 1.5 Flash) that "thinks" through incidents by executing targeted, multi-stage SQL queries across your entire stack.
-- **Command Center UI**: A modern, high-performance React dashboard with real-time WebSocket streaming that visualizes the agent's reasoning trace and SQL execution.
 - **Incident Triage Engine**: A specialized workflow that autonomously correlates CloudWatch error spikes with 3-day GitHub commit windows and Linear intent analysis.
-- **Delta Supply-Chain Auditor**: A system that bypasses alert fatigue by joining live package manifests with the OSV database to identify _newly introduced_ vulnerabilities in active Pull Requests, or scanning the entire org for a specific CVE in seconds.
+  - _Example_: Instantly correlating a `Memory Leak` in `aura-guard-node-service` (CloudWatch) with a `lodash` upgrade in `PR #102` (GitHub) and a related `Fix performance` ticket (Linear).
+- **Delta Supply-Chain Auditor**: A multi-language system (JS, Python, Rust) that bypasses alert fatigue by joining live package manifests with the OSV database to identify _newly introduced_ vulnerabilities in active Pull Requests.
+  - _Example_: Scanning a new PR for `express` and catching `CVE-2024-43796` (Prototype Pollution) before it ever reaches the `main` branch.
+- **Cross-Repo Blast Radius Evaluator**: A technical impact analysis tool that uses Coral table functions to instantly map which downstream services and repositories import a specific package or file, quantifying the risk of a "small change" across the entire organization.
+  - _Example_: Running a single SQL join to see that changing core logic in `next` within the `vercel` organization will break active PRs in `vercel/flags`, `vercel/storage`, and `vercel/sdk`
 
 ## How you used Coral
 
-Coral is the **intelligent backbone** of Aura Guard, acting as a unified relational layer over previously siloed APIs. We don't just "query" Coral; we use its **Federated SQL Engine** to perform complex, cross-source joins that would otherwise require hundreds of lines of custom SDK code.
+Coral is the **intelligent backbone** of Aura Guard, acting as a unified relational layer over previously siloed APIs. We don't just "query" Coral; we use its **SQL Engine** to perform complex, cross-source joins that would otherwise require hundreds of lines of custom SDK code.
 
 ### 1. The "Delta Security" Join (GitHub ∩ OSV)
 
@@ -43,7 +45,7 @@ This enables our **Delta PR Audit**: we join the `github.contents` of the PR hea
 
 When a core library is changed, we use `github.search_code` to find all downstream files that import it. We then **cross-join** those results with `github.pulls` to identify active PRs in other repositories that will be broken by the change. This is further joined with `linear.issues` to provide the organizational context (who is working on what).
 
-### 3. Temporal Incident Correlation (CloudWatch ∩ GitHub ∩ Linear)
+### 3. Temporal Incident Correlation (CloudWatchLogs ∩ CloudWatchMetrics ∩ GitHub ∩ Linear)
 
 This is where Coral shines. We treat CloudWatch log timestamps as the primary key for a temporal join:
 
@@ -51,7 +53,7 @@ This is where Coral shines. We treat CloudWatch log timestamps as the primary ke
 2.  **Step 2**: Join the error timestamp with `github.commits` using a `BETWEEN` filter on the 3-day window preceding the crash.
 3.  **Step 3**: Join the resulting `commit_sha` with `linear.issues` to verify if the "fix" or "feature" ticket was actually ready for deployment.
 
-By using Coral, we turned a manual process involving 4 different dashboards and 50+ clicks into a set of **precise, federated SQL statements**.
+By using Coral, we turned a manual process involving 4 different dashboards and 50+ clicks into a set of **precise, SQL statements**.
 
 ## Connected data sources
 
@@ -74,10 +76,10 @@ Aura Guard orchestrates data across the following live sources:
 1.  **Environment Setup**:
     ```bash
     cp .env.example .env
-    # Add your AWS, GitHub, and Model API keys
+    # Add your Model API keys
     ```
 2.  **Coral**:
-    Ensure you have the Coral setup and install all the relevand sources Checkout the docs https://withcoral.com/docs/getting-started/quickstart .
+    Ensure you have the Coral setup and install all the relevant sources Checkout the docs https://withcoral.com/docs/getting-started/quickstart .
 3.  **Launch Backend**:
     ```bash
     python -m venv venv
@@ -86,20 +88,43 @@ Aura Guard orchestrates data across the following live sources:
     python server.py
     ```
 4.  **Launch Dashboard**:
-    ```bash
-    cd dashboard
-    npm install
-    npm run dev
-    ```
+    `bash
+cd dashboard
+npm install
+npm run dev
+`
+    Once setup and running configure to query your repositories/services.
+
+5.  Aura Guard provides a centralized **Configuration** tab to scope all investigations. Understanding these inputs is key to its high-performance queries:
+
+| Input                   | Scope               | Technical Role                                                                |
+| :---------------------- | :------------------ | :---------------------------------------------------------------------------- |
+| **Organization / User** | GitHub              | Root namespace for repo discovery and search_code.                            |
+| **Repository**          | GitHub / OSV        | Primary target for supply-chain audits and manifest reading.                  |
+| **Pull Request #**      | GitHub              | Target for **Delta Scans** (comparing base vs head branch security).          |
+| **File or Package**     | GitHub              | Search key for **Blast Radius** analysis (e.g., `lodash` or `utils/auth.js`). |
+| **Service Name**        | CloudWatch / Linear | Keyword used to filter infrastructure metrics and map Linear tickets.         |
+| **Log Group**           | CloudWatch          | The AWS Log Group used for autonomous stack trace extraction.                 |
+
+> **💡 Try these examples**: If you don't have a specific target in mind, use these configurations to see the system in action:
+>
+> 1. **Comprehensive Scan (Full Audit)**: You can enter your own GithHub username or an small organisation with upto 50-100 repositories (Dont add too big of an org will be limited due to large data)
+>    - **Organization/User**: `Rohan-Hazari`
+>    - Currently only supports auditing for js, rust and python
+> 2. **Blast Radius (Impact Analysis)**:
+>    - **Organization**: `vercel`
+>    - **File or Package**: `next` (to see cross-repo secret-loading impact)
+> 3. **Incident Triage (Root Cause)**: Have setup cloudwatch logs and linear issues with dummy data use this to check, but incase you want to check on your own cloudwatch use seed_telemetry_data.py to seed the logs in your group (currently its tailored to a specific type of log)
+>    - **Organization**: `Rohan-Hazari`
+>    - **Service Name**: `aura-guard-node-service`
+>    - **Log Group**: `Filegroup/processor`
 
 ### 🔗 Resources
 
 - **Repository**: [github.com/Rohan-Hazari/Coral-Aura-Guard](https://github.com/Rohan-Hazari/Coral-Aura-Guard)
-- **Live Demo**: [aura-guard-demo.vercel.app](https://aura-guard-demo.vercel.app) (Mocked for public view)
 
 ## What’s next
 
 - **Autonomous Remediation**: Moving from "Triage" to "Fix" by automatically opening Linear tickets or PRs to revert offending commits.
 - **Predictive Anomaly Detection**: Joining historical CloudWatch metrics with past GitHub regressions to predict outages before they occur.
-- **Multi-Ecosystem Support**: Expanding the Delta Audit to support Go (go.mod) and Rust (Cargo.toml) natively via OSV joins.
 - **Slack/Teams Integration**: Bringing the agentic reasoning directly into the SRE's communication channels.
