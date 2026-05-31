@@ -81,124 +81,133 @@ async def websocket_endpoint(websocket: WebSocket):
 # Endpoints (Unified Native MCP Agent Routing)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/discovery")
-async def discover_triage_targets(owner: str = "withcoral"):
-    """Proactively discover high-priority triage targets with robust mock fallback."""
-    try:
-        # For the hackathon demo, we lead with these highly curated "smart alerts"
-        # that demonstrate the specific power of our multi-source correlation.
-        mock_items = [
-            {
-                "id": "error-1",
-                "type": "error",
-                "service": "api-ingestion",
-                "title": "🚨 Anomalous Error Spike in 'api-ingestion'",
-                "description": "CloudWatch detected 12 errors in the last 15m. Suspected regression in chunking logic.",
-                "tab": "incident-response",
-                "params": {"owner": owner, "service": "api-ingestion"}
-            },
-            {
-                "id": "audit-1",
-                "type": "audit",
-                "repo": "auth-service",
-                "pr": "1042",
-                "title": "🟡 Security Audit Required: PR #1042",
-                "description": "PR #1042 in 'auth-service' modifies package.json. Automated delta-scan recommended.",
-                "tab": "supply-chain",
-                "params": {"owner": owner, "repo": "auth-service", "pr": "1042"}
-            },
-            {
-                "id": "impact-1",
-                "type": "impact",
-                "file": "react-query",
-                "title": "🛡️ Proactive Blast Radius: 'react-query'",
-                "description": "Critical CVE reported for 'react-query'. Evaluate downstream impact across all repos.",
-                "tab": "blast-radius",
-                "params": {"owner": owner, "file": "react-query"}
-            }
-        ]
-        return {"items": mock_items}
-    except Exception as e:
-        logger.warning("Discovery failed: %s", e)
-        return {"items": []}
+import traceback
 
 @app.post("/api/org-scan")
 async def org_scan(owner: str, payload: ScanRequest):
-    """Perform organization-wide security audit via Agent."""
-    query = (
-        f"Perform an organization-wide security audit for organization '{owner}'. "
-        "Scan all accessible repositories for vulnerabilities in their package manifests "
-        "(package.json, Cargo.toml, requirements.txt) using osv.query_by_version. "
-        "Provide a prioritized executive summary."
-    )
+    """Perform organization or user-wide security audit via Fast Mode."""
+    # Fast-path for demo mode
+    if owner.lower() == "demo":
+        return {"report": "## Audit Summary\nFound 3 vulnerabilities across 2 repositories.", "status": "vulnerable"}
+
     try:
-        report = await agent.investigate(query, on_event=stream_event_to_ws)
+        await manager.broadcast({"type": "query_start", "sql": f"Scanning Repos for {owner}...", "agentic": False})
+        rows = await agent.fast_org_scan(owner)
+        
+        from commands.org_scan import _ORG_SCAN_PROMPT
+        report = await agent.summarize_data(rows, _ORG_SCAN_PROMPT, {"owner": owner})
         return {"report": report, "status": "vulnerable"}
     except Exception as e:
-        logger.error("Org scan failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Agent Error: {str(e)}")
+        msg = str(e)
+        logger.error("Org scan failed: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
 
 @app.post("/api/supply-chain")
 async def supply_chain_audit(owner: str, repo: str, payload: ScanRequest, pr: Optional[str] = Query(None)):
-    """Perform repository or PR-level supply-chain audit via Agent."""
-    if pr:
-        query = (
-            f"Perform a Delta supply-chain audit for PR '{pr}' in repository '{owner}/{repo}'. "
-            "Identify ONLY newly introduced or upgraded vulnerabilities by comparing base and head branch manifests. "
-            "Use github.pulls and osv.query_by_version."
-        )
-    else:
-        query = (
-            f"Perform a full supply-chain audit for the main branch of repository '{owner}/{repo}'. "
-            "Identify all known vulnerabilities in package manifests using osv.query_by_version."
-        )
+    """Perform repository supply-chain audit via Fast Mode."""
     try:
-        report = await agent.investigate(query, on_event=stream_event_to_ws)
+        await manager.broadcast({"type": "query_start", "sql": f"Scanning {owner}/{repo} manifests...", "agentic": False})
+        repo_data = await agent.fast_repo_scan(owner, repo)
+        
+        # Reuse existing prompt logic if possible, or simple direct prompt
+        prompt = "Analyze these vulnerabilities and active pull requests for repo {owner}/{repo}:\n{{rows_json}}"
+        report = await agent.summarize_data([repo_data], prompt.format(owner=owner, repo=repo), {"owner": owner, "repo": repo})
         return {"report": report, "status": "vulnerable"}
     except Exception as e:
-        logger.error("Supply chain audit failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Agent Error: {str(e)}")
+        msg = str(e)
+        logger.error("Supply chain audit failed: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
 
 @app.post("/api/blast-radius")
 async def blast_radius_eval(owner: str, file: str, payload: ScanRequest):
-    """Evaluate blast-radius impact of code changes via Agent."""
-    query = (
-        f"Evaluate the blast radius of modifying the file or package '{file}' in organization '{owner}'. "
-        "Use github.search_code to find downstream repositories that import or depend on this file, "
-        "then check if those repos have active GitHub Pull Requests at risk."
-    )
+    """Evaluate blast-radius impact via Fast Mode."""
+    # Use the correct table function syntax for github.search_code
+    sql = f"SELECT * FROM github.search_code(q => 'filename:{file} user:{owner}') LIMIT 5"
+    
     try:
-        report = await agent.investigate(query, on_event=stream_event_to_ws)
+        await manager.broadcast({"type": "query_start", "sql": sql, "agentic": False})
+        rows = await agent.run_sql(sql)
+        prompt = "Evaluate the blast radius of modifying {file} based on these importing files:\n{{rows_json}}"
+        report = await agent.summarize_data(rows, prompt.format(file=file), {"owner": owner, "file": file})
         return {"report": report, "status": "impacted"}
     except Exception as e:
-        logger.error("Blast radius evaluation failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Agent Error: {str(e)}")
+        msg = str(e)
+        logger.error("Blast radius failed: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
 
 @app.post("/api/incident-triage")
-async def incident_triage(owner: str, service: str, payload: ScanRequest):
-    """Perform autonomous Incident Triage and RCA via Agent."""
+async def incident_triage(owner: str, service: str, payload: ScanRequest, log_group: str = None):
+    """Perform autonomous Incident Triage via Fast Mode orchestration."""
     # Fast-path for demo mode
     if owner.lower() == "demo":
-        report = """## Summary — Ingestion timeout in `hello-service` affecting Enterprise tier.
-## Evidence — Found 3 ERROR logs in CloudWatch indicating step 2 timeout. Correlated with Commit `a1b2c3d4`.
-## Likely cause — Regression in optimized chunking logic (Confidence: High).
-## Blast radius — `hello-service` ingestion pipeline.
-## What changed — Commit `a1b2c3d4` was deployed 2 mins before first error.
-## Sources — [CloudWatch] [hello-service-logs] [GitHub] [a1b2c3d4]"""
-        return {"report": report, "status": "investigating", "remediation": "git revert a1b2c3d4"}
+        return {"report": "## Summary\nDemo RCA: Memory leak in worker.", "status": "investigating"}
 
-    query = (
-        f"Investigate the production incident for service '{service}' in organization '{owner}'. "
-        "Start with CloudWatch logs (cloudwatch_logs.log_events) to find errors. "
-        "Then query GitHub commits (github.commits) within a 3-day window BEFORE the first error. "
-        "Finally correlate with Linear tickets (linear.issues) to verify intent."
-    )
+    # Step 1: Fetch Logs (Using native AWS JSON filter pattern for high-performance filtering)
+    log_sql = f"SELECT * FROM cloudwatch_logs.log_events WHERE log_group_name = '{log_group}' AND filter_pattern = '{{ $.level = \"ERROR\" }}' LIMIT 5"
+    
     try:
-        report = await agent.investigate(query, on_event=stream_event_to_ws)
+        await manager.broadcast({"type": "query_start", "sql": log_sql, "agentic": False})
+        logs = await agent.run_sql(log_sql)
+        
+        # Analyze logs to find specific files and lines for deep correlation
+        target_file = None
+        for l in logs:
+            if isinstance(l, dict) and "properties" in l:
+                props = l["properties"]
+                if isinstance(props, dict) and "file" in props:
+                    target_file = props["file"]
+                    break
+
+        # Step 2: Fetch Commits (Targeting the specific file if found in logs)
+        if target_file:
+            commit_sql = f"SELECT * FROM github.commits WHERE owner = '{owner}' AND repo = '{service}' AND path = '{target_file}' LIMIT 3"
+        else:
+            commit_sql = f"SELECT * FROM github.commits WHERE owner = '{owner}' AND repo = '{service}' LIMIT 5"
+        
+        await manager.broadcast({"type": "query_start", "sql": commit_sql, "agentic": False})
+        commits = await agent.run_sql(commit_sql)
+        
+        # Step 3: Fetch File Content for LLM code-level explanation
+        file_content = ""
+        if target_file:
+            content_sql = f"SELECT content_text FROM github.contents WHERE owner = '{owner}' AND repo = '{service}' AND path = '{target_file}'"
+            await manager.broadcast({"type": "query_start", "sql": content_sql, "agentic": False})
+            content_rows = await agent.run_sql(content_sql)
+            if content_rows:
+                file_content = content_rows[0].get("content_text", "")
+
+        # Step 4: Fetch Issues (Search Title OR Description)
+        issue_sql = (
+            f"SELECT * FROM linear.issues "
+            f"WHERE title LIKE '%{service}%' OR description LIKE '%{service}%' "
+            "LIMIT 5"
+        )
+        await manager.broadcast({"type": "query_start", "sql": issue_sql, "agentic": False})
+        issues = await agent.run_sql(issue_sql)
+        
+        federated_data = {
+            "logs": logs,
+            "commits": commits,
+            "issues": issues,
+            "culprit_file_path": target_file,
+            "culprit_file_content": file_content
+        }
+        
+        from commands.incident_triage import _INCIDENT_PROMPT
+        report = await agent.summarize_data([federated_data], _INCIDENT_PROMPT, {"owner": owner, "service": service})
         return {"report": report, "status": "investigating"}
     except Exception as e:
-        logger.error("Incident triage failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Agent Error: {str(e)}")
+        msg = str(e)
+        logger.error("Incident triage failed: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
+        
+        from commands.incident_triage import _INCIDENT_PROMPT
+        report = await agent.summarize_data([federated_data], _INCIDENT_PROMPT, {"owner": owner, "service": service})
+        return {"report": report, "status": "investigating"}
+    except Exception as e:
+        msg = str(e)
+        logger.error("Incident triage failed: %s\n%s", msg, traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"Data Fetch Error: {msg}")
 
 @app.get("/health")
 async def health_check():

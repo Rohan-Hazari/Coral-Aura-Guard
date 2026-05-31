@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Zap, Terminal, AlertTriangle, CheckCircle2, Loader2, BarChart3, Activity, Command, Cpu, Globe, History, Play, RotateCcw, Trash2, ArrowRight, Database, Bell } from 'lucide-react';
+import { Shield, Zap, Terminal, AlertTriangle, CheckCircle2, Loader2, BarChart3, Activity, Command, Cpu, Globe, History, Play, RotateCcw, ArrowRight, Database, Bell, Settings, Brain } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -12,7 +12,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // --- Types ---
-type Tab = 'org-scan' | 'supply-chain' | 'blast-radius' | 'incident-response';
+type Tab = 'configuration' | 'org-scan' | 'blast-radius' | 'incident-response';
 interface Report {
   report: string;
   status: 'clean' | 'vulnerable' | 'impacted' | 'investigating';
@@ -30,6 +30,7 @@ interface StreamEvent {
   elapsed_ms?: number;
   row_count?: number;
   error?: string;
+  agentic?: boolean;
   timestamp: string;
 }
 
@@ -46,65 +47,59 @@ const API_BASE = 'http://localhost:8000';
 const WS_BASE = 'ws://localhost:8000/ws/stream';
 
 export default function App() {
-  const [showLanding, setShowLanding] = useState(true);
+  const [route, setRoute] = useState(() => window.location.pathname === '/demo' ? '/demo' : '/');
   const [activeTab, setActiveTab] = useState<Tab>('org-scan');
-  const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadings, setLoadings] = useState<Record<string, boolean>>({});
+  const [reports, setReports] = useState<Record<string, Report | null>>({});
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [remediating, setRemediating] = useState(false);
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
   const [scanRecentPrs, setScanRecentPrs] = useState(false);
-  const [surveillanceLimit, setSurveillanceLimit] = useState(5);
-  const [discoveryItems, setDiscoveryItems] = useState<DiscoveryItem[] | null>(null);
-  const [discoveryLoading, setDiscoveryLoading] = useState(true);
+  const [discoveryItems] = useState<DiscoveryItem[] | null>([
+    {
+        id: "error-1",
+        type: "error",
+        title: "🚨 Anomalous Error Spike in 'aura-guard-node-service'",
+        description: "CloudWatch detected 12 errors in the last 15m. Suspected regression in chunking logic.",
+        tab: "incident-response",
+        params: {owner: "Rohan-Hazari", service: "aura-guard-node-service", logGroup: "Filegroup/processor"}
+    },
+    {
+        id: "audit-1",
+        type: "audit",
+        title: "🟡 Security Audit Required: recent PRs",
+        description: "Recent PRs in 'aura-guard-node-service' modify package.json. Automated delta-scan recommended.",
+        tab: "supply-chain",
+        params: {owner: "Rohan-Hazari", repo: "aura-guard-node-service", pr: "recent"}
+    }
+  ]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Form States
-  const [owner, setOwner] = useState('withcoral');
-  const [repo, setRepo] = useState('coral');
+  const [owner, setOwner] = useState('Rohan-Hazari');
+  const [repo, setRepo] = useState('aura-guard-node-service');
   const [pr, setPr] = useState('');
-  const [libFile, setLibFile] = useState('react');
-  const [service, setService] = useState('api-ingestion');
+  const [libFile, setLibFile] = useState('express');
+  const [service, setService] = useState('aura-guard-node-service');
+  const [logGroup, setLogGroup] = useState('Filegroup/processor');
 
-  // Background Prefetching
   useEffect(() => {
-    const fetchDiscovery = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/discovery?owner=${owner}`);
-        const data = await res.json();
-        setDiscoveryItems(data.items);
-      } catch (err) {
-        console.error("Discovery failed, falling back to static mocks", err);
-        // Robust mock data if API fails completely
-        setDiscoveryItems([
-            {
-                id: "error-1",
-                type: "error",
-                service: "api-ingestion",
-                title: "🚨 Anomalous Error Spike in 'api-ingestion'",
-                description: "CloudWatch detected 12 errors in the last 15m. Suspected regression in chunking logic.",
-                tab: "incident-response",
-                params: {owner, service: "api-ingestion"}
-            },
-            {
-                id: "audit-1",
-                type: "audit",
-                repo: "auth-service",
-                pr: "1042",
-                title: "🟡 Security Audit Required: PR #1042",
-                description: "PR #1042 in 'auth-service' modifies package.json. Automated delta-scan recommended.",
-                tab: "supply-chain",
-                params: {owner, repo: "auth-service", pr: "1042"}
-            }
-        ]);
-      } finally {
-        setDiscoveryLoading(false);
-      }
+    const handlePopState = () => {
+      setRoute(window.location.pathname === '/demo' ? '/demo' : '/');
     };
-    fetchDiscovery();
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  const navigateToDemo = () => {
+    if (window.location.pathname !== '/demo') {
+      window.history.pushState({}, '', '/demo');
+    }
+    setRoute('/demo');
+  };
 
   // Resize Logic
   const startResizing = useCallback(() => setIsResizing(true), []);
@@ -161,7 +156,7 @@ export default function App() {
         params += `&file=${overrideParams?.file || libFile}`;
       } else if (targetTab === 'incident-response') {
         endpoint = '/api/incident-triage';
-        params += `&service=${overrideParams?.service || service}`;
+        params += `&service=${overrideParams?.service || service}&log_group=${overrideParams?.logGroup || logGroup}`;
       }
 
       const res = await fetch(`${API_BASE}${endpoint}?${params}`, {
@@ -193,14 +188,7 @@ export default function App() {
       if (item.params.service) setService(item.params.service);
       
       // Execute the scan for them
-      handleRunScan(item.params, item.tab);
-  };
-
-  const cycleSurveillanceLimit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const limits = [3, 5, 10, 20];
-    const currentIndex = limits.indexOf(surveillanceLimit);
-    setSurveillanceLimit(limits[(currentIndex + 1) % limits.length]);
+      handleRunScan(item.tab, item.params);
   };
 
   const handleRemediate = async () => {
@@ -210,28 +198,8 @@ export default function App() {
     setRemediating(false);
   };
 
-  const handleClearLogs = () => setEvents([]);
-
-  if (showLanding) {
-    return <LandingPage onStart={() => setShowLanding(false)} />;
-  }
-
-  // Loading Screen if transition happens before discovery is ready
-  if (discoveryLoading) {
-      return (
-          <div className="h-screen bg-[#0d0d0f] flex flex-col items-center justify-center text-center p-12">
-            <div className="relative mb-12">
-              <Loader2 className="w-24 h-24 text-primary animate-spin" />
-              <Shield className="w-10 h-10 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-            </div>
-            <h3 className="text-2xl font-black tracking-tighter uppercase mb-4">Initializing SRE Command Center</h3>
-            <div className="flex flex-col gap-3 font-mono text-[10px] text-primary/40">
-                <div className="animate-pulse">ESTABLISHING_CORAL_FEDERATION...</div>
-                <div className="animate-pulse delay-75">SCANNING_CLOUDWATCH_ANOMALIES...</div>
-                <div className="animate-pulse delay-150">SYNCING_GIT_MANIFESTS...</div>
-            </div>
-          </div>
-      );
+  if (route !== '/demo') {
+    return <LandingPage onStart={navigateToDemo} />;
   }
 
   return (
@@ -251,8 +219,8 @@ export default function App() {
           <div className="px-2 mb-4">
               <h3 className="text-[10px] font-black text-muted/40 uppercase tracking-[0.2em] mb-4">Core Workflows</h3>
               <div className="space-y-2">
-                <TabButton active={activeTab === 'org-scan'} onClick={() => setActiveTab('org-scan')} icon={<Globe className="w-4 h-4" />} label="Organization Scan" desc="Federated Security Audit" />
-                <TabButton active={activeTab === 'supply-chain'} onClick={() => setActiveTab('supply-chain')} icon={<Shield className="w-4 h-4" />} label="Repo Auditor" desc="Surgical Vulnerability Check" />
+                <TabButton active={activeTab === 'configuration'} onClick={() => setActiveTab('configuration')} icon={<Settings className="w-4 h-4" />} label="Configuration" desc="Global scan parameters" />
+                <TabButton active={activeTab === 'org-scan'} onClick={() => setActiveTab('org-scan')} icon={<Globe className="w-4 h-4" />} label="Comprehensive Scan" desc="Org & PR Security Audit" />
                 <TabButton active={activeTab === 'blast-radius'} onClick={() => setActiveTab('blast-radius')} icon={<Zap className="w-4 h-4" />} label="Blast Radius" desc="Downstream Impact Analysis" />
                 <TabButton active={activeTab === 'incident-response'} onClick={() => setActiveTab('incident-response')} icon={<Activity className="w-4 h-4" />} label="Incident Triage" desc="Autonomous Root Cause" />
               </div>
@@ -310,40 +278,91 @@ export default function App() {
             <div className="lg:col-span-4 space-y-6">
               <section className="terminal-card p-6 shadow-2xl bg-white/[0.01]">
                 <h3 className="text-[10px] font-black mb-6 flex items-center gap-2 text-primary uppercase tracking-[0.2em]">
-                  Target Configuration
+                  {activeTab === 'configuration' ? 'Global Parameters' : 'Target Context'}
                 </h3>
                 <div className="space-y-5">
-                  <InputField label="ORGANIZATION" value={owner} onChange={setOwner} placeholder="e.g. withcoral" />
-                  {activeTab === 'org-scan' && (
-                    <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl text-[10px] text-primary/70 leading-relaxed italic shadow-inner">
-                      Performing organization-wide L4 audit. Aura Guard will dynamically discover and scan all repositories.
-                    </div>
-                  )}
-                  {activeTab === 'supply-chain' && (
+                  {activeTab === 'configuration' ? (
                     <>
-                      <InputField label="REPOSITORY" value={repo} onChange={setRepo} placeholder="e.g. coral" />
-                      {!scanRecentPrs && <InputField label="PULL REQUEST #" value={pr} onChange={setPr} placeholder="e.g. 1042" />}
-                      <div className="flex items-center gap-3 p-3 bg-secondary/30 rounded-xl border border-white/5 mt-2 cursor-pointer hover:bg-secondary/50 transition-colors" onClick={() => setScanRecentPrs(!scanRecentPrs)}>
-                        <div className={cn("w-4 h-4 rounded border flex items-center justify-center transition-colors", scanRecentPrs ? "bg-primary border-primary" : "border-white/20")}>
-                          {scanRecentPrs && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      <InputField label="ORGANIZATION / USER" value={owner} onChange={setOwner} placeholder="e.g. withcoral" />
+                      <InputField label="REPOSITORY" value={repo} onChange={setRepo} placeholder="e.g. aura-guard-node-service" />
+                      <InputField label="PULL REQUEST #" value={pr} onChange={setPr} placeholder="e.g. 1042" />
+                      <InputField label="FILE OR PACKAGE" value={libFile} onChange={setLibFile} placeholder="e.g. express" />
+                      <InputField label="SERVICE NAME" value={service} onChange={setService} placeholder="e.g. aura-guard-node-service" />
+                      <InputField label="CLOUDWATCH LOG GROUP" value={logGroup} onChange={setLogGroup} placeholder="e.g. api-ingestion-logs" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-4 bg-secondary/20 rounded-xl border border-white/5 space-y-3">
+                        <div className="flex justify-between text-[10px] uppercase font-bold tracking-tight">
+                          <span className="opacity-40">Context</span>
+                          <span className="text-primary">{owner} / {repo}</span>
                         </div>
-                        <div className="flex-1 text-[10px] font-black uppercase tracking-tight opacity-70">Delta PR Audit Mode</div>
+                        {activeTab === 'incident-response' && (
+                          <div className="flex justify-between text-[10px] uppercase font-bold tracking-tight">
+                            <span className="opacity-40">Service</span>
+                            <span className="text-accent">{service}</span>
+                          </div>
+                        )}
+                        <button onClick={() => setActiveTab('configuration')} className="w-full text-[9px] text-center font-black text-primary/60 hover:text-primary transition-colors uppercase pt-2 border-t border-white/5">
+                          Modify Global Config
+                        </button>
                       </div>
+
+                      {activeTab === 'org-scan' && (
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl text-[10px] text-primary/70 leading-relaxed italic shadow-inner">
+                          Performing comprehensive L4 audit. Aura Guard will dynamically discover all repositories and audit both vulnerabilities and active PRs.
+                        </div>
+                      )}
+
+                      <button onClick={() => handleRunScan()} disabled={loading} className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center gap-3 mt-6 shadow-xl shadow-primary/20 group uppercase text-xs tracking-widest">
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />}
+                        Execute Analysis
+                      </button>
                     </>
                   )}
-                  {activeTab === 'blast-radius' && <InputField label="FILE OR PACKAGE" value={libFile} onChange={setLibFile} placeholder="e.g. lodash" />}
-                  {activeTab === 'incident-response' && <InputField label="SERVICE NAME" value={service} onChange={setService} placeholder="e.g. api-ingestion" />}
-                  
-                  <button onClick={() => handleRunScan()} disabled={loading} className="w-full bg-primary hover:bg-primary/90 disabled:bg-primary/50 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center gap-3 mt-6 shadow-xl shadow-primary/20 group uppercase text-xs tracking-widest">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />}
-                    Execute Analysis
-                  </button>
                 </div>
               </section>
             </div>
 
             <div className="lg:col-span-8">
-              {!report && !loading && !error && (
+              {activeTab === 'configuration' && (
+                <div className="space-y-8 animate-in fade-in duration-1000">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white/30 flex items-center gap-2">
+                      <Settings className="w-4 h-4" />
+                      Global Command Configuration
+                    </h3>
+                  </div>
+
+                  <div className="terminal-card p-12 bg-white/[0.01] border-dashed">
+                    <div className="max-w-2xl mx-auto space-y-10">
+                      <div className="flex gap-8 items-start">
+                        <div className="bg-primary/20 p-4 rounded-3xl"><Database className="w-8 h-8 text-primary" /></div>
+                        <div>
+                          <h4 className="text-lg font-bold mb-2">Native MCP Federation</h4>
+                          <p className="text-muted/40 text-sm leading-relaxed">Aura Guard uses these parameters to scope its autonomous investigations across GitHub, CloudWatch, and Linear. Changes here apply to all workflow executions.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-8 items-start opacity-50">
+                        <div className="bg-accent/20 p-4 rounded-3xl"><Activity className="w-8 h-8 text-accent" /></div>
+                        <div>
+                          <h4 className="text-lg font-bold mb-2">Telemetry Scoping</h4>
+                          <p className="text-muted/40 text-sm leading-relaxed">Ensuring your log groups and service names match your AWS environment is critical for high-confidence root cause analysis.</p>
+                        </div>
+                      </div>
+
+                      <div className="pt-10 border-t border-white/5">
+                        <button onClick={() => setActiveTab('org-scan')} className="bg-white/5 hover:bg-white/10 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">
+                          Return to Command Center
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab !== 'configuration' && !report && !loading && !error && (
                 <div className="space-y-8 animate-in fade-in duration-1000">
                     <div className="flex items-center justify-between">
                         <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white/30 flex items-center gap-2">

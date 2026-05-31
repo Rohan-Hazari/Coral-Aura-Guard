@@ -1,0 +1,44 @@
+[
+  {
+    "id": "iss-101",
+    "identifier": "LIN-101",
+    "title": "Optimize chunking logic for high-throughput ingestion",
+    "description": "The current chunking logic is too slow for batches > 500. We need to implement parallel processing.",
+    "priority": 1,
+    "priority_label": "Urgent",
+    "estimate": 5,
+    "team_key": "ENG",
+    "state_name": "In Progress",
+    "assignee_name": "Rohan",
+    "created_at": "2026-05-28T10:00:00Z",
+    "url": "https://linear.app/aura-guard/issue/LIN-101"
+  },
+  {
+    "id": "iss-102",
+    "identifier": "LIN-102",
+    "title": "Fix memory leak in auth-service token validation",
+    "description": "JWT validation is leaking handles. Root cause suspected in the RSA cache.",
+    "priority": 2,
+    "priority_label": "High",
+    "estimate": 3,
+    "team_key": "SEC",
+    "state_name": "Done",
+    "assignee_name": "Alice",
+    "created_at": "2026-05-29T14:00:00Z",
+    "url": "https://linear.app/aura-guard/issue/LIN-102"
+  },
+  {
+    "id": "iss-103",
+    "identifier": "LIN-103",
+    "title": "Upgrade react-query to v5",
+    "description": "Major version upgrade to take advantage of new caching features.",
+    "priority": 3,
+    "priority_label": "Medium",
+    "estimate": 8,
+    "team_key": "FE",
+    "state_name": "Backlog",
+    "assignee_name": "Bob",
+    "created_at": "2026-05-30T09:00:00Z",
+    "url": "https://linear.app/aura-guard/issue/LIN-103"
+  }
+]

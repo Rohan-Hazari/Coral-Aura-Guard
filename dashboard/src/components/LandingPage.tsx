@@ -1,10 +1,4 @@
-import { Shield, Zap, Activity, Globe, CheckCircle2, ArrowRight, Terminal, Search, Lock, Cpu, Database, Layout, BarChart3, Workflow, AlertCircle } from 'lucide-react';
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { Shield, Zap, Activity, Globe, ArrowRight, Terminal, Lock, Cpu, Database, Layout, BarChart3, Workflow, AlertCircle } from 'lucide-react';
 
 interface LandingPageProps {
   onStart: () => void;

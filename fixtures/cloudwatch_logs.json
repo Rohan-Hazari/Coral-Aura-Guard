@@ -1,0 +1,98 @@
+[
+  {
+    "event_id": "event-1000",
+    "timestamp": 1780170597154,
+    "ingestion_time": 1780170597654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Ingestion timeout for chunk 502. Retrying...",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1001",
+    "timestamp": 1780170537154,
+    "ingestion_time": 1780170537654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Database connection pool exhausted. (Max 50)",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1002",
+    "timestamp": 1780170477154,
+    "ingestion_time": 1780170477654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Unexpected token in JSON payload: 'NaN'",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1003",
+    "timestamp": 1780170417154,
+    "ingestion_time": 1780170417654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Chunking logic failed to split batch of 1000. Timeout after 30s.",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1004",
+    "timestamp": 1780170357154,
+    "ingestion_time": 1780170357654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Memory limit exceeded in worker-4. Restarting...",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1005",
+    "timestamp": 1780170297154,
+    "ingestion_time": 1780170297654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Ingestion timeout for chunk 502. Retrying...",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1006",
+    "timestamp": 1780170237154,
+    "ingestion_time": 1780170237654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Database connection pool exhausted. (Max 50)",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1007",
+    "timestamp": 1780170177154,
+    "ingestion_time": 1780170177654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Unexpected token in JSON payload: 'NaN'",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1008",
+    "timestamp": 1780170117154,
+    "ingestion_time": 1780170117654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Chunking logic failed to split batch of 1000. Timeout after 30s.",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1009",
+    "timestamp": 1780170057154,
+    "ingestion_time": 1780170057654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Memory limit exceeded in worker-4. Restarting...",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1010",
+    "timestamp": 1780169997154,
+    "ingestion_time": 1780169997654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Ingestion timeout for chunk 502. Retrying...",
+    "log_group_name": "api-ingestion-logs"
+  },
+  {
+    "event_id": "event-1011",
+    "timestamp": 1780169937154,
+    "ingestion_time": 1780169937654,
+    "log_stream_name": "worker-pool-A",
+    "message": "ERROR: Database connection pool exhausted. (Max 50)",
+    "log_group_name": "api-ingestion-logs"
+  }
+]
